@@ -25,7 +25,6 @@ services:
     container_name: bastion
     hostname: bastion.lab.example.com
     privileged: true
-    cgroupns_mode: host
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
@@ -70,7 +69,6 @@ services:
     container_name: workstation
     hostname: workstation.lab.example.com
     privileged: true
-    cgroupns_mode: host
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
@@ -119,7 +117,6 @@ services:
     container_name: servera
     hostname: servera.lab.example.com
     privileged: true
-    cgroupns_mode: host
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
@@ -169,7 +166,6 @@ services:
     container_name: serverb
     hostname: serverb.lab.example.com
     privileged: true
-    cgroupns_mode: host
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
