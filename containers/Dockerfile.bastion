@@ -1,0 +1,38 @@
+FROM rhcsa-base:latest
+
+# Install dnsmasq for DNS and additional server tools
+RUN dnf -y install dnsmasq && dnf clean all
+
+# Copy DNS configuration
+COPY configs/dnsmasq.conf /etc/dnsmasq.conf
+
+# Copy NFS exports
+COPY configs/exports /etc/exports
+
+# Create NFS shared directories with content for labs
+RUN mkdir -p /shares/public /shares/private /shares/management \
+              /shares/indirect/west /shares/indirect/east /shares/indirect/central && \
+    echo 'This is public content on classroom NFS server.' > /shares/public/README && \
+    echo 'This is private content - restricted access.' > /shares/private/README && \
+    echo 'Management data - authorized personnel only.' > /shares/management/README && \
+    echo 'West office data' > /shares/indirect/west/README && \
+    echo 'East office data' > /shares/indirect/east/README && \
+    echo 'Central office data' > /shares/indirect/central/README && \
+    chmod 755 /shares/public && \
+    chmod 750 /shares/private && \
+    chmod 700 /shares/management && \
+    chmod 755 /shares/indirect /shares/indirect/west /shares/indirect/east /shares/indirect/central
+
+# Create content directory for lab materials
+RUN mkdir -p /content/rhcsa && \
+    echo 'Lab materials would go here' > /content/rhcsa/README
+
+# Enable services
+RUN systemctl enable dnsmasq.service && \
+    systemctl enable nfs-server.service && \
+    systemctl enable httpd.service
+
+# Set hostname
+RUN echo 'bastion.lab.example.com' > /etc/hostname
+
+CMD ["/usr/lib/systemd/systemd"]

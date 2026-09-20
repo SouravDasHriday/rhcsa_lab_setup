@@ -1,0 +1,46 @@
+FROM rhcsa-base:latest
+
+# Install additional server packages for labs
+RUN dnf -y install \
+      targetcli \
+      podman \
+      skopeo \
+      buildah \
+      container-selinux \
+      fuse-overlayfs \
+      slirp4netns \
+      && dnf clean all
+
+# Copy disk setup script
+COPY scripts/setup-disks.sh /usr/local/bin/setup-disks.sh
+RUN chmod +x /usr/local/bin/setup-disks.sh
+
+# Create systemd service for disk setup that runs before user labs
+RUN echo '[Unit]' > /etc/systemd/system/setup-disks.service && \
+    echo 'Description=Setup virtual loop disks for lab practice' >> /etc/systemd/system/setup-disks.service && \
+    echo 'After=local-fs.target' >> /etc/systemd/system/setup-disks.service && \
+    echo 'Before=multi-user.target' >> /etc/systemd/system/setup-disks.service && \
+    echo '' >> /etc/systemd/system/setup-disks.service && \
+    echo '[Service]' >> /etc/systemd/system/setup-disks.service && \
+    echo 'Type=oneshot' >> /etc/systemd/system/setup-disks.service && \
+    echo 'ExecStart=/usr/local/bin/setup-disks.sh' >> /etc/systemd/system/setup-disks.service && \
+    echo 'RemainAfterExit=yes' >> /etc/systemd/system/setup-disks.service && \
+    echo '' >> /etc/systemd/system/setup-disks.service && \
+    echo '[Install]' >> /etc/systemd/system/setup-disks.service && \
+    echo 'WantedBy=multi-user.target' >> /etc/systemd/system/setup-disks.service
+
+RUN systemctl enable setup-disks.service
+
+# Enable services
+RUN systemctl enable httpd.service 2>/dev/null || true && \
+    systemctl enable tuned.service 2>/dev/null || true && \
+    systemctl enable firewalld.service 2>/dev/null || true
+
+# Create directory for disk images
+RUN mkdir -p /var/disks
+
+# Configure subuid/subgid for rootless podman
+RUN echo 'student:100000:65536' >> /etc/subuid && \
+    echo 'student:100000:65536' >> /etc/subgid
+
+CMD ["/usr/lib/systemd/systemd"]

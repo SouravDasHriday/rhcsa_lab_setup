@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+import sys
+import subprocess
+import argparse
+import time
+
+# Colors for output
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    BOLD = '\033[1m'
+    END = '\033[0m'
+
+def print_header(title):
+    print(f"\n{Colors.BOLD}{Colors.BLUE}=== {title} ==={Colors.END}")
+
+def print_step(msg):
+    print(f"  {Colors.YELLOW}·{Colors.END} {msg}")
+
+def print_pass(msg):
+    print(f"  {Colors.GREEN}✓ PASS:{Colors.END} {msg}")
+
+def print_fail(msg):
+    print(f"  {Colors.RED}✗ FAIL:{Colors.END} {msg}")
+
+def run_remote(host, cmd, user="root"):
+    """Run a command remotely via SSH and return (returncode, stdout, stderr)"""
+    ssh_cmd = [
+        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "PasswordAuthentication=no", 
+        f"{user}@{host}", cmd
+    ]
+    try:
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=10)
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 255, "", "SSH connection timed out."
+    except Exception as e:
+        return 255, "", str(e)
+
+def run_local(cmd):
+    """Run a command locally"""
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except Exception as e:
+        return 255, "", str(e)
+
+# ==============================================================================
+# LAB IMPLEMENTATIONS
+# ==============================================================================
+
+class Lab:
+    def __init__(self, name, description, scenario):
+        self.name = name
+        self.description = description
+        self.scenario = scenario
+
+    def start(self):
+        print_step("Preparing lab environment...")
+        self._start()
+        print_step("Lab environment is ready!")
+        print(f"\n{Colors.BOLD}Scenario:{Colors.END}")
+        print(self.scenario)
+
+    def grade(self):
+        print_step(f"Grading {self.name} lab...")
+        passed = self._grade()
+        if passed:
+            print(f"\n{Colors.BOLD}{Colors.GREEN}★ SUCCESS: Lab completed successfully! ★{Colors.END}\n")
+        else:
+            print(f"\n{Colors.BOLD}{Colors.RED}⚠ FAILURE: Lab incomplete. Review the errors above. ⚠{Colors.END}\n")
+
+    def finish(self):
+        print_step("Cleaning up lab environment...")
+        self._finish()
+        print_step("Cleanup complete.")
+
+    def _start(self): pass
+    def _grade(self): return False
+    def _finish(self): pass
+
+
+class UsersLab(Lab):
+    def __init__(self):
+        super().__init__("users", "User and Group Management", 
+            "On servera: Create a group named 'sysadmins'. Create a user named 'sarah' with UID 2024. Add 'sarah' to the 'sysadmins' group as a secondary group. Set sarah's password to 'redhat'.")
+    
+    def _start(self):
+        run_remote("servera", "userdel -r sarah 2>/dev/null; groupdel sysadmins 2>/dev/null")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "id sarah 2>/dev/null")
+        if rc != 0:
+            print_fail("User 'sarah' does not exist.")
+            passed = False
+        else:
+            print_pass("User 'sarah' exists.")
+            if "uid=2024(sarah)" in out:
+                print_pass("User 'sarah' has correct UID 2024.")
+            else:
+                print_fail(f"User 'sarah' does not have UID 2024. Output: {out}")
+                passed = False
+            
+            if "sysadmins" in out:
+                print_pass("User 'sarah' is a member of 'sysadmins' group.")
+            else:
+                print_fail("User 'sarah' is not a member of 'sysadmins' group.")
+                passed = False
+        
+        # Test password
+        rc, _, _ = run_remote("servera", "echo 'redhat' | su - sarah -c 'whoami'")
+        if rc == 0:
+            print_pass("Password for 'sarah' is correct.")
+        else:
+            print_fail("Password for 'sarah' is incorrect or missing.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+class PermissionsLab(Lab):
+    def __init__(self):
+        super().__init__("permissions", "File Permissions and Ownership",
+            "On servera: The directory /var/www/html/shared exists. Change its group ownership to 'wheel'. Set the setgid bit on it so new files inherit the group. Ensure the group has rwx permissions.")
+    
+    def _start(self):
+        run_remote("servera", "mkdir -p /var/www/html/shared && chown root:root /var/www/html/shared && chmod 755 /var/www/html/shared")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "stat -c '%A %G' /var/www/html/shared 2>/dev/null")
+        if rc != 0:
+            print_fail("Directory /var/www/html/shared does not exist.")
+            return False
+        
+        perms, group = out.split()
+        if group == "wheel":
+            print_pass("Group ownership is 'wheel'.")
+        else:
+            print_fail(f"Group ownership is '{group}', expected 'wheel'.")
+            passed = False
+            
+        if perms[5] == "s":
+            print_pass("setgid bit is set.")
+        else:
+            print_fail(f"setgid bit is not set. Perms: {perms}")
+            passed = False
+            
+        if perms[4:7] in ["rws", "rwx"]:
+            print_pass("Group has rwx permissions.")
+        else:
+            print_fail(f"Group does not have rwx permissions. Perms: {perms}")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        run_remote("servera", "rm -rf /var/www/html/shared")
+
+
+class ServicesLab(Lab):
+    def __init__(self):
+        super().__init__("services", "Systemd Service Management",
+            "On servera: Start the 'httpd' service and enable it to start automatically at boot.")
+    
+    def _start(self):
+        run_remote("servera", "systemctl stop httpd; systemctl disable httpd 2>/dev/null")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "systemctl is-active httpd")
+        if out == "active":
+            print_pass("Service 'httpd' is active.")
+        else:
+            print_fail("Service 'httpd' is not active.")
+            passed = False
+            
+        rc, out, _ = run_remote("servera", "systemctl is-enabled httpd")
+        if out == "enabled":
+            print_pass("Service 'httpd' is enabled.")
+        else:
+            print_fail("Service 'httpd' is not enabled.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        pass
+
+
+class SshLab(Lab):
+    def __init__(self):
+        super().__init__("ssh", "OpenSSH Server Configuration",
+            "On serverb: Configure the SSH daemon to deny root logins (PermitRootLogin no). Restart the service.")
+    
+    def _start(self):
+        run_remote("serverb", "sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config; systemctl restart sshd")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("serverb", "grep -E '^PermitRootLogin no' /etc/ssh/sshd_config")
+        if rc == 0:
+            print_pass("PermitRootLogin is set to 'no' in sshd_config.")
+        else:
+            print_fail("PermitRootLogin is not set to 'no'.")
+            passed = False
+            
+        # Try logging in as root via password (should fail regardless, but good check)
+        rc, _, _ = run_remote("serverb", "systemctl is-active sshd")
+        if rc == 0:
+            print_pass("sshd service is running.")
+        else:
+            print_fail("sshd service is not running.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+class CronLab(Lab):
+    def __init__(self):
+        super().__init__("cron", "Scheduling Tasks",
+            "On servera: Configure a cron job for the user 'student' that runs the command 'logger hello' every 5 minutes.")
+    
+    def _start(self):
+        run_remote("servera", "crontab -r -u student 2>/dev/null")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "crontab -l -u student 2>/dev/null")
+        if rc != 0:
+            print_fail("No crontab found for user 'student'.")
+            return False
+            
+        if "logger hello" in out and "*/5" in out:
+            print_pass("Found correct cron job for student.")
+        else:
+            print_fail(f"Cron job incorrect. Found: {out}")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+class LvmLab(Lab):
+    def __init__(self):
+        super().__init__("lvm", "Logical Volume Management",
+            "On serverb: Create a Volume Group named 'vg_web' using /dev/vdb. Create a Logical Volume named 'lv_web' of size 2GB in 'vg_web'. Format it as XFS and mount it persistently on /mnt/web.")
+    
+    def _start(self):
+        run_remote("serverb", "umount /mnt/web 2>/dev/null; sed -i '/lv_web/d' /etc/fstab; lvremove -f vg_web/lv_web 2>/dev/null; vgremove -f vg_web 2>/dev/null; pvremove -f /dev/vdb 2>/dev/null; wipefs -a /dev/vdb; rm -rf /mnt/web")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("serverb", "lvs --noheadings -o vg_name,lv_name vg_web/lv_web 2>/dev/null")
+        if rc == 0 and "vg_web" in out and "lv_web" in out:
+            print_pass("Logical volume lv_web exists in vg_web.")
+        else:
+            print_fail("Logical volume vg_web/lv_web not found.")
+            return False
+            
+        rc, out, _ = run_remote("serverb", "findmnt -n -o FSTYPE /mnt/web 2>/dev/null")
+        if out == "xfs":
+            print_pass("Filesystem is mounted on /mnt/web as XFS.")
+        else:
+            print_fail(f"Filesystem not mounted correctly. Found: {out}")
+            passed = False
+            
+        rc, out, _ = run_remote("serverb", "grep -E '/mnt/web.*xfs' /etc/fstab")
+        if rc == 0:
+            print_pass("Persistent mount found in /etc/fstab.")
+        else:
+            print_fail("Persistent mount missing from /etc/fstab.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+class NfsLab(Lab):
+    def __init__(self):
+        super().__init__("nfs", "NFS Client Mounting",
+            "On servera: Mount the NFS share 'bastion.lab.example.com:/shares/public' persistently on '/mnt/public'.")
+    
+    def _start(self):
+        run_remote("servera", "umount /mnt/public 2>/dev/null; sed -i '/bastion/d' /etc/fstab; rm -rf /mnt/public")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "findmnt -n -o SOURCE,FSTYPE /mnt/public 2>/dev/null")
+        if "bastion.lab.example.com:/shares/public" in out and "nfs" in out.lower():
+            print_pass("NFS share mounted on /mnt/public.")
+        else:
+            print_fail("NFS share not mounted on /mnt/public.")
+            passed = False
+            
+        rc, out, _ = run_remote("servera", "grep -E 'bastion.lab.example.com:/shares/public.*/mnt/public' /etc/fstab")
+        if rc == 0:
+            print_pass("Persistent mount found in /etc/fstab.")
+        else:
+            print_fail("Persistent mount missing from /etc/fstab.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+class FirewallLab(Lab):
+    def __init__(self):
+        super().__init__("firewall", "Firewalld Management",
+            "On servera: Add the 'http' service to the default firewalld zone permanently, and reload the firewall.")
+    
+    def _start(self):
+        run_remote("servera", "firewall-cmd --remove-service=http --permanent; firewall-cmd --reload")
+
+    def _grade(self):
+        passed = True
+        rc, out, _ = run_remote("servera", "firewall-cmd --list-services")
+        if "http" in out.split():
+            print_pass("Service 'http' is allowed in the active runtime firewall.")
+        else:
+            print_fail("Service 'http' is NOT active in the runtime firewall.")
+            passed = False
+            
+        rc, out, _ = run_remote("servera", "firewall-cmd --list-services --permanent")
+        if "http" in out.split():
+            print_pass("Service 'http' is allowed permanently.")
+        else:
+            print_fail("Service 'http' is NOT allowed permanently.")
+            passed = False
+            
+        return passed
+
+    def _finish(self):
+        self._start()
+
+
+# Register all labs
+LABS = {
+    "users": UsersLab(),
+    "permissions": PermissionsLab(),
+    "services": ServicesLab(),
+    "ssh": SshLab(),
+    "cron": CronLab(),
+    "lvm": LvmLab(),
+    "nfs": NfsLab(),
+    "firewall": FirewallLab()
+}
+
+def print_help():
+    print(f"{Colors.BOLD}RHCSA Custom Lab Utility{Colors.END}")
+    print("Usage: lab <action> <topic>\n")
+    print("Actions:")
+    print("  start   - Prepare the environment and show the scenario")
+    print("  grade   - Check your work and report PASS/FAIL")
+    print("  finish  - Clean up the environment\n")
+    print("Available Topics:")
+    for key, lab in LABS.items():
+        print(f"  {key:<12} - {lab.description}")
+    print("")
+
+def main():
+    if len(sys.argv) < 3:
+        print_help()
+        sys.exit(1)
+
+    action = sys.argv[1].lower()
+    topic = sys.argv[2].lower()
+
+    if topic not in LABS:
+        print(f"{Colors.RED}Error: Unknown topic '{topic}'.{Colors.END}\n")
+        print_help()
+        sys.exit(1)
+
+    lab = LABS[topic]
+
+    if action == "start":
+        print_header(f"Starting Lab: {topic}")
+        lab.start()
+    elif action == "grade":
+        print_header(f"Grading Lab: {topic}")
+        lab.grade()
+    elif action == "finish":
+        print_header(f"Finishing Lab: {topic}")
+        lab.finish()
+    else:
+        print(f"{Colors.RED}Error: Unknown action '{action}'.{Colors.END}")
+        print_help()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

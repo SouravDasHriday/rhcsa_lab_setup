@@ -1,0 +1,16 @@
+# NFS Exports for RHCSA Lab Practice
+# These exports support NFS client mounting and autofs labs
+
+# Public share - accessible by all lab machines (read-only)
+/shares/public       172.25.250.0/24(ro,sync,no_subtree_check,no_root_squash)
+
+# Private share - read-write access
+/shares/private      172.25.250.0/24(rw,sync,no_subtree_check,no_root_squash)
+
+# Management share - restricted
+/shares/management   172.25.250.10/32(rw,sync,no_subtree_check,no_root_squash) 172.25.250.11/32(rw,sync,no_subtree_check,no_root_squash)
+
+# Indirect autofs map directories
+/shares/indirect/west      172.25.250.0/24(ro,sync,no_subtree_check,no_root_squash)
+/shares/indirect/east      172.25.250.0/24(ro,sync,no_subtree_check,no_root_squash)
+/shares/indirect/central   172.25.250.0/24(ro,sync,no_subtree_check,no_root_squash)

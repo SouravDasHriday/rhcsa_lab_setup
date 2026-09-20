@@ -1,0 +1,133 @@
+FROM rockylinux:9
+
+ENV container=docker
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# Install systemd and ALL essential RHCSA packages in ONE layer
+RUN dnf -y --allowerasing install \
+      systemd \
+      systemd-libs \
+      systemd-resolved \
+      dbus-broker \
+      dbus-tools \
+      openssh-server \
+      openssh-clients \
+      sudo \
+      passwd \
+      vim-enhanced \
+      bash-completion \
+      man-db \
+      man-pages \
+      info \
+      less \
+      tree \
+      wget \
+      curl \
+      bind-utils \
+      net-tools \
+      iproute \
+      iputils \
+      procps-ng \
+      psmisc \
+      lsof \
+      strace \
+      tcpdump \
+      tar \
+      gzip \
+      bzip2 \
+      xz \
+      zip \
+      unzip \
+      rsync \
+      diffutils \
+      patch \
+      findutils \
+      grep \
+      sed \
+      gawk \
+      at \
+      cronie \
+      nfs-utils \
+      autofs \
+      httpd \
+      mod_ssl \
+      tuned \
+      chrony \
+      logrotate \
+      rsyslog \
+      acl \
+      attr \
+      lvm2 \
+      xfsdump \
+      xfsprogs \
+      e2fsprogs \
+      parted \
+      gdisk \
+      quota \
+      firewalld \
+      policycoreutils \
+      policycoreutils-python-utils \
+      selinux-policy \
+      selinux-policy-targeted \
+      setroubleshoot-server \
+      setools-console \
+      libselinux-utils \
+      NetworkManager \
+      NetworkManager-tui \
+      python3 \
+      python3-pip \
+      util-linux \
+      coreutils \
+      shadow-utils \
+      words \
+      file \
+      bc \
+      tmux \
+      hostname \
+      langpacks-en \
+      glibc-langpack-en \
+      && dnf clean all
+
+# Mask unnecessary systemd services that cause issues in containers
+RUN systemctl mask \
+      systemd-remount-fs.service \
+      dev-hugepages.mount \
+      sys-fs-fuse-connections.mount \
+      systemd-logind.service \
+      getty.target \
+      console-getty.service \
+      systemd-udev-trigger.service \
+      systemd-firstboot.service \
+      systemd-machine-id-commit.service
+
+# Enable core services
+RUN systemctl enable sshd.service \
+    && systemctl enable crond.service \
+    && systemctl enable atd.service \
+    && systemctl enable rsyslog.service \
+    && systemctl enable chronyd.service
+
+# Configure SSH: allow password auth and root login
+RUN sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    ssh-keygen -A
+
+# Create student user with password 'student' and sudo access
+RUN useradd -m -s /bin/bash student && \
+    echo 'student:student' | chpasswd && \
+    echo 'root:redhat' | chpasswd && \
+    usermod -aG wheel student
+
+# Ensure wheel group has sudo access
+RUN echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/wheel && \
+    chmod 0440 /etc/sudoers.d/wheel
+
+# Set timezone
+RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+
+# Configure bash prompt to show hostname clearly
+RUN echo 'export PS1="[\u@\h \W]\$ "' >> /etc/bashrc
+
+CMD ["/usr/lib/systemd/systemd"]

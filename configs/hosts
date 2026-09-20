@@ -1,0 +1,14 @@
+# RHCSA Lab Static Hosts File
+# Distributed to all lab containers as fallback DNS resolution
+
+127.0.0.1   localhost localhost.localdomain
+::1         localhost localhost.localdomain
+
+# Lab network - student machines
+172.25.250.254  bastion.lab.example.com   bastion
+172.25.250.254  classroom.example.com     classroom
+172.25.250.254  content.example.com       content
+172.25.250.254  materials.example.com     materials
+172.25.250.9    workstation.lab.example.com  workstation
+172.25.250.10   servera.lab.example.com   servera
+172.25.250.11   serverb.lab.example.com   serverb

@@ -1,0 +1,246 @@
+# =============================================================================
+# RHCSA Lab Environment - Docker Compose
+# =============================================================================
+# Mirrors the Red Hat RH124/RH134 classroom topology:
+#   - bastion (172.25.250.254)   : DNS, NFS, content server
+#   - workstation (172.25.250.9) : Student primary workstation
+#   - servera (172.25.250.10)    : Managed server A
+#   - serverb (172.25.250.11)    : Managed server B
+#
+# Usage:
+#   docker compose up -d          # Start all containers
+#   docker compose down           # Stop all containers
+#   docker compose down -v        # Stop and remove volumes (full reset)
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # BASTION - Gateway, DNS (dnsmasq), NFS Server, Content Server
+  # ===========================================================================
+  bastion:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.bastion
+    image: ${DOCKER_USER:-local}/rhcsa-bastion:latest
+    container_name: bastion
+    hostname: bastion.lab.example.com
+    privileged: true
+    cgroupns_mode: host
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - bastion_data:/var/lib
+    networks:
+      labnet:
+        ipv4_address: 172.25.250.254
+    dns:
+      - 172.25.250.254
+      - 8.8.8.8
+    extra_hosts:
+      - "bastion.lab.example.com:172.25.250.254"
+      - "classroom.example.com:172.25.250.254"
+      - "content.example.com:172.25.250.254"
+      - "materials.example.com:172.25.250.254"
+      - "workstation.lab.example.com:172.25.250.9"
+      - "servera.lab.example.com:172.25.250.10"
+      - "serverb.lab.example.com:172.25.250.11"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ===========================================================================
+  # WORKSTATION - Student primary workstation
+  # ===========================================================================
+  workstation:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.workstation
+    image: ${DOCKER_USER:-local}/rhcsa-workstation:latest
+    container_name: workstation
+    hostname: workstation.lab.example.com
+    privileged: true
+    cgroupns_mode: host
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - workstation_home:/home/student
+      - workstation_data:/var/lib
+    networks:
+      labnet:
+        ipv4_address: 172.25.250.9
+    dns:
+      - 172.25.250.254
+      - 8.8.8.8
+    extra_hosts:
+      - "bastion.lab.example.com:172.25.250.254"
+      - "classroom.example.com:172.25.250.254"
+      - "content.example.com:172.25.250.254"
+      - "materials.example.com:172.25.250.254"
+      - "workstation.lab.example.com:172.25.250.9"
+      - "servera.lab.example.com:172.25.250.10"
+      - "serverb.lab.example.com:172.25.250.11"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    depends_on:
+      bastion:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ===========================================================================
+  # SERVERA - Managed Server A
+  # ===========================================================================
+  servera:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.server
+    image: ${DOCKER_USER:-local}/rhcsa-server:latest
+    container_name: servera
+    hostname: servera.lab.example.com
+    privileged: true
+    cgroupns_mode: host
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - servera_home:/home/student
+      - servera_data:/var/lib
+      - servera_disks:/var/disks
+    networks:
+      labnet:
+        ipv4_address: 172.25.250.10
+    dns:
+      - 172.25.250.254
+      - 8.8.8.8
+    extra_hosts:
+      - "bastion.lab.example.com:172.25.250.254"
+      - "classroom.example.com:172.25.250.254"
+      - "content.example.com:172.25.250.254"
+      - "materials.example.com:172.25.250.254"
+      - "workstation.lab.example.com:172.25.250.9"
+      - "servera.lab.example.com:172.25.250.10"
+      - "serverb.lab.example.com:172.25.250.11"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    depends_on:
+      bastion:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # ===========================================================================
+  # SERVERB - Managed Server B
+  # ===========================================================================
+  serverb:
+    build:
+      context: .
+      dockerfile: containers/Dockerfile.server
+    image: ${DOCKER_USER:-local}/rhcsa-server:latest
+    container_name: serverb
+    hostname: serverb.lab.example.com
+    privileged: true
+    cgroupns_mode: host
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    tmpfs:
+      - /run
+      - /run/lock
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - serverb_home:/home/student
+      - serverb_data:/var/lib
+      - serverb_disks:/var/disks
+    networks:
+      labnet:
+        ipv4_address: 172.25.250.11
+    dns:
+      - 172.25.250.254
+      - 8.8.8.8
+    extra_hosts:
+      - "bastion.lab.example.com:172.25.250.254"
+      - "classroom.example.com:172.25.250.254"
+      - "content.example.com:172.25.250.254"
+      - "materials.example.com:172.25.250.254"
+      - "workstation.lab.example.com:172.25.250.9"
+      - "servera.lab.example.com:172.25.250.10"
+      - "serverb.lab.example.com:172.25.250.11"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    depends_on:
+      bastion:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "systemctl is-system-running 2>/dev/null | grep -qE 'running|degraded'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+# =============================================================================
+# NETWORK
+# =============================================================================
+networks:
+  labnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.250.0/24
+          gateway: 172.25.250.1
+    driver_opts:
+      com.docker.network.bridge.name: br-rhcsa
+
+# =============================================================================
+# VOLUMES - Persistent storage for student work and disk images
+# =============================================================================
+volumes:
+  bastion_data:
+    name: rhcsa_bastion_data
+  workstation_home:
+    name: rhcsa_workstation_home
+  workstation_data:
+    name: rhcsa_workstation_data
+  servera_home:
+    name: rhcsa_servera_home
+  servera_data:
+    name: rhcsa_servera_data
+  servera_disks:
+    name: rhcsa_servera_disks
+  serverb_home:
+    name: rhcsa_serverb_home
+  serverb_data:
+    name: rhcsa_serverb_data
+  serverb_disks:
+    name: rhcsa_serverb_disks

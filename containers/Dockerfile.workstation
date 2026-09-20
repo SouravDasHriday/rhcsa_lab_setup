@@ -1,0 +1,28 @@
+FROM rhcsa-base:latest
+
+# Install additional workstation tools
+RUN dnf -y install \
+      ansible-core \
+      bash-completion \
+      tmux \
+      git \
+      && dnf clean all
+
+# Create SSH directory for student
+RUN mkdir -p /home/student/.ssh && \
+    chmod 700 /home/student/.ssh && \
+    chown student:student /home/student/.ssh
+
+# Copy lab grading script
+COPY scripts/lab /usr/local/bin/lab
+RUN chmod +x /usr/local/bin/lab
+
+# Enable services
+RUN systemctl enable httpd.service 2>/dev/null || true && \
+    systemctl enable tuned.service 2>/dev/null || true && \
+    systemctl enable firewalld.service 2>/dev/null || true
+
+# Set hostname
+RUN echo 'workstation.lab.example.com' > /etc/hostname
+
+CMD ["/usr/lib/systemd/systemd"]
